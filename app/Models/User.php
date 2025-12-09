@@ -2,31 +2,105 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+// Instead of using the built-in Laravel User model, we'll extend the Authenticatable class
+use App\Enums\UserRole;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Laravel\Sanctum\HasApiTokens;
 
+/**
+ * User model for the HLS Video Converter API
+ *
+ * @property string $id
+ * @property string $username
+ * @property string $email
+ * @property string $password
+ * @property string $role
+ * @property int $storageUsed
+ * @property int $storageLimit
+ * @property bool $isActive
+ * @property string|null $apiKey
+ * @property string|null $lastLoginAt
+ * @property bool $adsDisabled
+ * @property \Carbon\Carbon|null $createdAt
+ * @property \Carbon\Carbon|null $updatedAt
+ */
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, HasApiTokens;
 
     /**
-     * The attributes that are mass assignable.
+     * The table associated with the model.
      *
-     * @var list<string>
+     * @var string
      */
+    protected $table = 'users';
+
+    public $timestamps = false;
+
+    // Temporarily manage timestamps manually since the DB doesn't have proper defaults
     protected $fillable = [
-        'name',
+        'id',
+        'username',
         'email',
         'password',
+        'role',
+        'storageUsed',
+        'storageLimit',
+        'isActive',
+        'apiKey',
+        'lastLoginAt',
+        'adsDisabled',
+        'createdAt',
+        'updatedAt',
     ];
 
     /**
-     * The attributes that should be hidden for serialization.
+     * The primary key for the model.
      *
-     * @var list<string>
+     * @var string
+     */
+    protected $primaryKey = 'id';
+
+    /**
+     * Indicates if the model's ID is auto-incrementing.
+     *
+     * @var bool
+     */
+    public $incrementing = false;
+
+    /**
+     * The data type of the auto-incrementing ID.
+     *
+     * @var string
+     */
+    protected $keyType = 'string';
+
+    // /**
+    //  * The attributes that are mass assignable.
+    //  *
+    //  * @var array
+    //  */
+    // protected $fillable = [
+    //     'id',
+    //     'username',
+    //     'email',
+    //     'password',
+    //     'role',
+    //     'storageUsed',
+    //     'storageLimit',
+    //     'isActive',
+    //     'apiKey',
+    //     'lastLoginAt',
+    //     'adsDisabled',
+    // ];
+
+    /**
+     * The attributes that should be hidden for arrays.
+     *
+     * @var array
      */
     protected $hidden = [
         'password',
@@ -34,15 +108,39 @@ class User extends Authenticatable
     ];
 
     /**
-     * Get the attributes that should be cast.
+     * The attributes that should be cast.
      *
-     * @return array<string, string>
+     * @var array
      */
-    protected function casts(): array
+    protected $casts = [
+        'id' => 'string',
+        'username' => 'string',
+        'email' => 'string',
+        'password' => 'string',
+        'role' => UserRole::class,
+        'storageUsed' => 'integer',
+        'storageLimit' => 'integer',
+        'isActive' => 'boolean',
+        'apiKey' => 'string',
+        'lastLoginAt' => 'date',
+        'adsDisabled' => 'boolean',
+        'createdAt' => 'datetime',
+        'updatedAt' => 'datetime',
+    ];
+
+    // Relationships
+    public function settings(): HasOne
     {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
+        return $this->hasOne(Setting::class, 'userId', 'id');
+    }
+
+    public function videos(): HasMany
+    {
+        return $this->hasMany(Video::class, 'userId', 'id');
+    }
+
+    public function analytics(): HasMany
+    {
+        return $this->hasMany(Analytics::class, 'userId', 'id');
     }
 }
