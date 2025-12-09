@@ -275,6 +275,258 @@ The database makes extensive use of PostgreSQL's JSONB data type for flexible co
 - Regular B-tree indexes for frequently queried fields
 - Composite indexes for common query patterns
 
+# Services Documentation
+
+## Overview
+This document describes all the services available in the HLS Video Converter API built with Node.js. These services handle various backend operations including video processing, storage, backups, and more.
+
+## Available Services
+
+### Backup Management Service (`backupManagementService.js`)
+
+Handles automated management of backup files with retention policies.
+
+**Key Features:**
+- Cleans up old backup files based on retention policy
+- Compresses backup files (if compression enabled)
+- Provides backup storage statistics
+- Archives old backups to separate directory
+- Validates backup directory and provides status information
+
+**Main Methods:**
+- `cleanupOldBackups()` - Cleans up old backup files based on retention policy
+- `compressBackup(filename)` - Compresses backup files
+- `getStorageStats()` - Gets backup storage statistics
+- `archiveOldBackups()` - Archives old backups to separate directory
+- `validateBackupDirectory()` - Validates backup directory
+- `getStatus()` - Gets backup management status
+
+### Backup Service (`backupService.js`)
+
+Handles database backup and restore operations for PostgreSQL.
+
+**Key Features:**
+- Creates database backups in .dump format (PostgreSQL custom format)
+- Restores database from backup files (.dump or .sql format)
+- Lists all available backups
+- Deletes backup files
+- Creates JSON backups as alternative when pg_dump is not available
+- Provides download functionality for backup files
+
+**Main Methods:**
+- `createBackup()` - Creates database backup
+- `restoreBackup(filename)` - Restores database from backup file
+- `listBackups()` - Lists all available backups
+- `deleteBackup(filename)` - Deletes a backup file
+- `createJsonBackup()` - Creates backup using Sequelize (table-level export as JSON)
+- `restoreJsonBackup(filename)` - Restores from JSON backup
+
+### Backup Verification Service (`backupVerificationService.js`)
+
+Handles backup integrity verification for different formats.
+
+**Key Features:**
+- Verifies backup file integrity for .dump, .sql, and .json formats
+- Validates PostgreSQL dump files using pg_restore
+- Checks SQL files for basic structure
+- Verifies JSON backup structure and data
+- Provides backup statistics and analysis
+- Verifies all backup files in directory
+
+**Main Methods:**
+- `verifyBackup(filename)` - Verifies backup file integrity
+- `verifyDumpFile(filepath)` - Verifies PostgreSQL dump file
+- `verifySqlFile(filepath)` - Verifies SQL file
+- `verifyJsonFile(filepath)` - Verifies JSON backup file
+- `verifyAllBackups()` - Verifies all backup files
+- `getBackupStats(filename)` - Gets backup statistics
+
+### Chunk Upload Service (`chunkUploadService.js`)
+
+Handles chunked video upload functionality for large files.
+
+**Key Features:**
+- Starts new chunk upload sessions with unique IDs
+- Saves individual chunks to disk with proper indexing
+- Checks if all chunks are received for a session
+- Merges chunks in order to reconstruct original video
+- Completes chunk upload and creates video record
+- Cancels upload session and cleans up chunks
+- Provides session information and progress tracking
+
+**Main Methods:**
+- `startSession(userId, originalFileName, totalSize, totalChunks)` - Starts new chunk upload session
+- `saveChunk(sessionId, chunkIndex, chunkData)` - Saves a chunk to disk
+- `areAllChunksReceived(sessionId, totalChunks)` - Checks if all chunks received
+- `mergeChunks(sessionId, totalChunks, finalPath)` - Merges all chunks into single file
+- `completeUpload(sessionId, options)` - Completes chunk upload and creates video record
+- `cancelSession(sessionId)` - Cancels upload session
+- `cleanupSession(sessionId)` - Cleans up upload session and chunks
+- `getSessionInfo(sessionId)` - Gets session information
+
+### Email Service (`emailService.js`)
+
+Handles email operations and notifications.
+
+**Key Features:**
+- Supports multiple email providers (SMTP, SendGrid, Mailgun)
+- Sends welcome emails to new users
+- Sends video processing complete notifications
+- Tests email configuration
+- Initializes email transporter from database settings
+- Provides HTML templates for emails
+
+**Main Methods:**
+- `initializeTransporter()` - Initializes or refreshes email settings from database
+- `sendEmail(options)` - Sends an email
+- `sendWelcomeEmail(user)` - Sends welcome email to new user
+- `sendVideoProcessedEmail(user, video)` - Sends video processing complete notification
+- `testConnection()` - Tests email configuration
+
+### Google Drive Service (`googleDriveService.js`)
+
+Handles Google Drive integration for remote video uploads.
+
+**Key Features:**
+- Supports both API key and OAuth authentication
+- Extracts file ID from various Google Drive URL formats
+- Gets file metadata using API key or OAuth
+- Downloads files from Google Drive with progress tracking
+- Validates Google Drive URLs
+- Supports OAuth authorization flow
+
+**Main Methods:**
+- `initWithApiKey(apiKey)` - Initializes with API key
+- `initWithOAuth(clientId, clientSecret, refreshToken)` - Initializes with OAuth credentials
+- `extractFileId(url)` - Extracts file ID from Google Drive URL
+- `getFileMetadataWithApiKey(fileId)` - Gets file metadata using API key
+- `downloadFileWithProgress(fileId, destinationPath, totalSize, onProgress)` - Downloads file with progress tracking
+- `getFileInfo(url)` - Gets file info from Google Drive URL
+- `isGoogleDriveUrl(url)` - Checks if URL is a Google Drive URL
+
+### HLS Converter Service (`hlsConverter.js`)
+
+Handles video conversion to HLS format with adaptive bitrate streaming.
+
+**Key Features:**
+- Converts videos to HLS format with multiple quality variants (1080p, 720p, 480p, 360p)
+- Supports hardware acceleration (NVIDIA NVENC, Intel QSV, AMD AMF)
+- Generates master playlist for adaptive streaming
+- Creates thumbnail grids (2x2 format) or single thumbnails
+- Uploads HLS files to S3-compatible storage
+- Supports watermarking and subtitle burning
+- Parallel encoding for multiple quality variants
+
+**Main Methods:**
+- `convertToHLS(options)` - Main conversion method to HLS format
+- `convertSingleQuality(options)` - Converts video to single quality variant
+- `generateMasterPlaylist(outputDir, qualities)` - Generates master playlist for adaptive streaming
+- `generateThumbnail(inputPath, outputDir)` - Generates video thumbnails
+- `getVideoMetadata(inputPath)` - Gets video metadata (duration, resolution)
+- `deleteHLSFiles(hlsPath, options)` - Deletes HLS files (both local and S3)
+
+### Remote Uploader Service (`remoteUploader.js`)
+
+Handles uploading videos from remote URLs.
+
+**Key Features:**
+- Downloads files from remote URLs with progress tracking
+- Extracts filenames from URLs and Content-Disposition headers
+- Downloads from Google Drive using API
+- Validates remote URLs
+- Supports Google Drive integration
+- Tracks download progress
+
+**Main Methods:**
+- `getFilenameFromUrl(url, googleDriveSettings)` - Extracts filename from URL
+- `downloadFromUrl(options)` - Downloads file from remote URL
+- `downloadFromGoogleDrive(options)` - Downloads from Google Drive
+- `validateUrl(url, googleDriveSettings)` - Validates remote URL
+- `getGoogleDriveFilename(url, googleDriveSettings)` - Gets filename from Google Drive
+
+### S3 Storage Service (`s3Storage.js`)
+
+Handles S3-compatible storage operations for HLS files.
+
+**Key Features:**
+- Supports multiple S3-compatible services (AWS S3, MinIO, Cloudflare R2, Garage)
+- Uploads files and directories to S3
+- Deletes files and directories from S3
+- Generates signed URLs for private access
+- Checks if files exist in S3
+- Uploads HLS conversion results to S3
+- Supports public URL generation
+
+**Main Methods:**
+- `initFromDatabase()` - Initializes S3 client from database settings
+- `uploadFile(localPath, s3Key, contentType)` - Uploads file to S3
+- `uploadHLSFiles(localHlsDir, userId, videoId)` - Uploads HLS conversion results to S3
+- `deleteFile(s3Key)` - Deletes file from S3
+- `getSignedUrl(s3Key, expiresIn)` - Gets signed URL for private access
+- `fileExists(s3Key)` - Checks if file exists in S3
+- `getPublicUrl(s3Key)` - Gets public URL for S3 object
+
+### Scheduled Backup Service (`scheduledBackupService.js`)
+
+Handles automated backup scheduling and execution.
+
+**Key Features:**
+- Schedules backups using cron expressions
+- Runs initial backup after startup delay
+- Performs cleanup of old backups based on retention policy
+- Sends notifications (placeholder implementation)
+- Provides status information about scheduled backups
+- Supports stopping and starting the service
+
+**Main Methods:**
+- `initialize()` - Initializes scheduled backup
+- `scheduleBackup()` - Schedules backup based on cron expression
+- `performBackup()` - Performs backup operation
+- `cleanupOldBackups()` - Cleans up old backup files
+- `stop()` - Stops scheduled backup service
+- `getStatus()` - Gets current backup schedule status
+
+### Settings Service (`settingsService.js`)
+
+Handles application settings management from database.
+
+**Key Features:**
+- Retrieves admin settings from database
+- Provides specific setting categories (FFmpeg, S3, Redis, etc.)
+- Gets user-specific settings
+- Implements caching to reduce database queries
+- Provides default settings as fallback
+- Supports clearing cache
+
+**Main Methods:**
+- `getAdminSettings()` - Gets admin settings from database
+- `getFFmpegSettings()` - Gets FFmpeg settings
+- `getS3Settings()` - Gets S3 settings
+- `getRedisSettings()` - Gets Redis settings
+- `getUserSettings(userId)` - Gets user-specific settings
+- `clearCache()` - Clears settings cache
+
+### Video Queue Service (`videoQueue.js`)
+
+Handles video processing queue for conversions and remote uploads.
+
+**Key Features:**
+- Uses Bull for Redis-based queue management with in-memory fallback
+- Processes video conversions and remote uploads in queue
+- Tracks queue position and statistics
+- Supports multiple job types (convert, remote)
+- Handles both Redis and memory-based queue systems
+- Manages processing phases (downloading, converting)
+
+**Main Methods:**
+- `init()` - Initializes queue from database settings
+- `addToQueue(videoId, type, data)` - Adds video to conversion queue
+- `getQueuePosition(videoId)` - Gets queue position for a video
+- `getQueueStats()` - Gets queue statistics
+- `processJob(jobData)` - Processes a conversion job
+- `processVideoConversion(videoId)` - Processes video conversion
+- `processRemoteUpload(videoId, url, userId, googleDriveSettings, isGoogleDrive)` - Processes remote upload
+
 # API Endpoints Documentation
 
 ## Overview

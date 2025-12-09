@@ -11,7 +11,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Video model for the HLS Video Converter API
@@ -73,7 +72,21 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Video extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory;
+
+    /**
+     * The name of the "created at" column.
+     *
+     * @var string|null
+     */
+    const CREATED_AT = 'createdAt';
+
+    /**
+     * The name of the "updated at" column.
+     *
+     * @var string|null
+     */
+    const UPDATED_AT = 'updatedAt';
 
     /**
      * The primary key for the model.
@@ -177,10 +190,10 @@ class Video extends Model
         'thumbnailPath' => 'string',
         'duration' => 'float',
         'resolution' => 'array', // JSONB
-        'fps' => 'integer',
+        'fps' => 'float',
         'codec' => 'array', // JSONB
         'status' => VideoStatus::class,
-        'processingPhase' => VideoProcessingPhase::class,
+        'processingPhase' => 'string',
         'processingProgress' => 'integer',
         'downloadProgress' => 'integer',
         'convertProgress' => 'integer',
@@ -217,6 +230,37 @@ class Video extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    /**
+     * Get the processing phase attribute.
+     *
+     * @return \App\Enums\VideoProcessingPhase|null
+     */
+    public function getProcessingPhaseAttribute($value)
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        // Try to create enum from value, fallback to a default value (FAILED) if invalid
+        return \App\Enums\VideoProcessingPhase::tryFrom($value) ?? \App\Enums\VideoProcessingPhase::FAILED;
+    }
+
+    /**
+     * Set the processing phase attribute.
+     *
+     * @param \App\Enums\VideoProcessingPhase|string|null $value
+     * @return void
+     */
+    public function setProcessingPhaseAttribute($value)
+    {
+        if ($value instanceof \App\Enums\VideoProcessingPhase) {
+            $this->attributes['processingPhase'] = $value->value;
+        } else {
+            $this->attributes['processingPhase'] = $value;
+        }
+    }
+
 
     // Relationships
     public function user(): BelongsTo
