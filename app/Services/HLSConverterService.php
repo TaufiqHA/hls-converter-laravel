@@ -156,7 +156,7 @@ class HLSConverterService
         }
 
         // Handle S3 upload if S3 storage is enabled (takes ~5% of remaining progress)
-        $s3Service = new S3StorageService();
+        $s3Service = new S3StorageService(true); // Initialize from database config
         $s3PublicUrl = null;
 
         if ($userId && $videoId) {
@@ -185,7 +185,9 @@ class HLSConverterService
             'masterPlaylist' => $s3PublicUrl ?: $masterPlaylistPath,
             'qualityVariants' => $qualityVariants,
             'thumbnail' => $thumbnailPath,
-            'hlsDirectory' => $outputDir
+            'hlsDirectory' => $outputDir,
+            'storageType' => $s3PublicUrl ? 's3' : 'local',
+            's3PublicUrl' => $s3PublicUrl
         ];
     }
 
@@ -365,8 +367,13 @@ class HLSConverterService
             ];
         }
 
-        // Get the actual file size
-        $fileSize = Storage::size($segmentFile) ?: 0;
+        // Get the actual file size, with safe exception handling
+        try {
+            $fileSize = Storage::size($segmentFile) ?: 0;
+        } catch (\Exception $e) {
+            Log::warning("Could not retrieve file size for {$segmentFile}: " . $e->getMessage());
+            $fileSize = 0;
+        }
 
         return [
             'success' => true,
@@ -494,10 +501,18 @@ class HLSConverterService
             Log::error('FFprobe execution failed: ' . $e->getMessage());
 
             // Return fallback values
+            // Use a safer approach to get file size that doesn't throw exceptions
+            try {
+                $fileSize = Storage::size($inputPath) ?: 0;
+            } catch (\Exception $e2) {
+                Log::warning("Could not retrieve file size for {$inputPath}: " . $e2->getMessage());
+                $fileSize = 0;
+            }
+
             return [
                 'duration' => 0,
                 'resolution' => ['width' => 0, 'height' => 0],
-                'fileSize' => Storage::size($inputPath) ?: 0,
+                'fileSize' => $fileSize,
                 'size' => '0x0',
                 'format' => 'unknown',
                 'fps' => 30
@@ -508,10 +523,18 @@ class HLSConverterService
             Log::error('FFprobe command failed: ' . $cmd);
 
             // Return fallback values
+            // Use a safer approach to get file size that doesn't throw exceptions
+            try {
+                $fileSize = Storage::size($inputPath) ?: 0;
+            } catch (\Exception $e) {
+                Log::warning("Could not retrieve file size for {$inputPath}: " . $e->getMessage());
+                $fileSize = 0;
+            }
+
             return [
                 'duration' => 0,
                 'resolution' => ['width' => 0, 'height' => 0],
-                'fileSize' => Storage::size($inputPath) ?: 0,
+                'fileSize' => $fileSize,
                 'size' => '0x0',
                 'format' => 'unknown',
                 'fps' => 30
@@ -524,10 +547,18 @@ class HLSConverterService
             Log::error('FFprobe returned empty output');
 
             // Return fallback values
+            // Use a safer approach to get file size that doesn't throw exceptions
+            try {
+                $fileSize = Storage::size($inputPath) ?: 0;
+            } catch (\Exception $e) {
+                Log::warning("Could not retrieve file size for {$inputPath}: " . $e->getMessage());
+                $fileSize = 0;
+            }
+
             return [
                 'duration' => 0,
                 'resolution' => ['width' => 0, 'height' => 0],
-                'fileSize' => Storage::size($inputPath) ?: 0,
+                'fileSize' => $fileSize,
                 'size' => '0x0',
                 'format' => 'unknown',
                 'fps' => 30
@@ -540,10 +571,18 @@ class HLSConverterService
             Log::error('FFprobe JSON decode error: ' . json_last_error_msg());
 
             // Return fallback values
+            // Use a safer approach to get file size that doesn't throw exceptions
+            try {
+                $fileSize = Storage::size($inputPath) ?: 0;
+            } catch (\Exception $e) {
+                Log::warning("Could not retrieve file size for {$inputPath}: " . $e->getMessage());
+                $fileSize = 0;
+            }
+
             return [
                 'duration' => 0,
                 'resolution' => ['width' => 0, 'height' => 0],
-                'fileSize' => Storage::size($inputPath) ?: 0,
+                'fileSize' => $fileSize,
                 'size' => '0x0',
                 'format' => 'unknown',
                 'fps' => 30
@@ -616,7 +655,7 @@ class HLSConverterService
 
             // If S3 deletion is requested, delegate to S3 service
             if ($deleteFromS3 && $videoId) {
-                $s3Service = new S3StorageService();
+                $s3Service = new S3StorageService(true); // Initialize from database config
                 $s3Service->deleteHLSFiles($videoId);
             }
 

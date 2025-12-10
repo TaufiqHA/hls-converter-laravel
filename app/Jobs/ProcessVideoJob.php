@@ -84,6 +84,11 @@ class ProcessVideoJob implements ShouldQueue
      */
     private function convertVideoToHls(Video $video, VideoStatusService $statusService): void
     {
+        // Check if this is a remote upload and download the file first
+        if (in_array($video->uploadType, [\App\Enums\UploadType::REMOTE, \App\Enums\UploadType::GOOGLEDRIVE])) {
+            $this->processRemoteUpload($video, $statusService);
+        }
+
         // Initialize the HLS converter service
         $hlsConverter = new \App\Services\HLSConverterService();
 
@@ -136,9 +141,63 @@ class ProcessVideoJob implements ShouldQueue
             'hlsPlaylistUrl' => $result['masterPlaylist'],
             'qualityVariants' => $result['qualityVariants'],
             'thumbnailPath' => $result['thumbnail'],
-            'convertProgress' => 100
+            'convertProgress' => 100,
+            'storageType' => $result['storageType'] ?? 'local',
+            's3PublicUrl' => $result['s3PublicUrl'] ?? null
         ]);
     }
+
+    /**
+     * Process remote upload by downloading the file from the remote URL or Google Drive
+     *
+     * @param Video $video The video model
+     * @param VideoStatusService $statusService The status service instance
+     * @return void
+     * @throws \Exception
+     */
+    private function processRemoteUpload(Video $video, VideoStatusService $statusService): void
+    {
+        // Update progress to downloading phase
+        $statusService->updateProgress($this->videoId, 0, \App\Enums\VideoProcessingPhase::DOWNLOADING);
+
+        try {
+            $remoteUploader = new \App\Services\RemoteUploaderService();
+
+            if ($video->uploadType === \App\Enums\UploadType::GOOGLEDRIVE) {
+                // Use the dedicated GoogleDriveService for downloading
+                $googleDriveService = new \App\Services\GoogleDriveService();
+                $result = $googleDriveService->downloadFromGoogleDrive($video, $video->remoteUrl);
+            } else {
+                // Use RemoteUploaderService for regular remote URLs
+                $onProgress = function($progress, $downloaded, $total) use ($statusService) {
+                    // Calculate overall progress (0-100), with downloading maxing at 90% before conversion begins
+                    $downloadProgress = min(90, intval($progress * 0.9)); // 90% for download phase
+                    $statusService->updateProgress($this->videoId, $downloadProgress, \App\Enums\VideoProcessingPhase::DOWNLOADING);
+                };
+
+                $result = $remoteUploader->downloadFromUrl($video->remoteUrl, $video->userId, $onProgress);
+
+                // After successful download, update video record with file path and size
+                $video->update([
+                    'originalFilePath' => $result['filePath'],
+                    'originalFileSize' => $result['fileSize']
+                ]);
+
+                // Update user's storage used with the actual file size
+                $user = $video->user;
+                $user->increment('storageUsed', $result['fileSize']);
+            }
+
+            // Update download progress to 100%
+            $statusService->updateProgress($this->videoId, 100, \App\Enums\VideoProcessingPhase::DOWNLOADING);
+
+            Log::info("Successfully downloaded remote file for video ID {$this->videoId} to {$result['filePath']}, Size: {$result['fileSize']} bytes");
+        } catch (\Exception $e) {
+            Log::error("Failed to download remote file: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
 
     /**
      * Get the appropriate hardware accelerator based on system capabilities
@@ -162,9 +221,10 @@ class ProcessVideoJob implements ShouldQueue
     public function failed(\Throwable $exception)
     {
         Log::error("ProcessVideoJob failed for video {$this->videoId}: " . $exception->getMessage());
-        
+
         // Update the video status to failed
         $statusService = new VideoStatusService();
         $statusService->markAsFailed($this->videoId, $exception->getMessage());
     }
 }
+

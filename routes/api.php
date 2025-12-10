@@ -7,6 +7,11 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\videoController;
 use App\Http\Controllers\settingsController;
 use App\Http\Controllers\StreamController;
+use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\AdminController;
+
+// Guest routes (no authentication required)
+Route::post('/public/remote-upload', [videoController::class, 'guestRemoteUpload']);
 
 // Authentication routes
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -15,9 +20,9 @@ Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth
 
 // User authentication profile routes (as per REQ.md)
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/auth/me', [UserController::class, 'me']);
-    Route::put('/auth/profile', [UserController::class, 'updateProfile']);
-    Route::put('/auth/password', [UserController::class, 'changePassword']);
+    Route::get('/auth/me', [AuthController::class, 'me']);
+    Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
+    Route::put('/auth/password', [AuthController::class, 'changePassword']);
 });
 
 // Video routes (as per REQ.md)
@@ -91,6 +96,55 @@ Route::middleware('auth:sanctum')->group(function () {
 // Streaming route - handles HLS streaming for videos
 // GET /api/stream/:userId/:videoId/* - handles all HLS-related file requests
 Route::get('/stream/{userId}/{videoId}/{file}', [StreamController::class, 'streamFile'])->where('file', '.*');
+
+// Analytics routes (as per analytics.md)
+// Public routes
+Route::post('/analytics/track', [AnalyticsController::class, 'trackEvent']);
+Route::get('/analytics/session', [AnalyticsController::class, 'generateSession']);
+
+// Private routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/analytics/video/{videoId}', [AnalyticsController::class, 'getVideoAnalytics']);
+    Route::get('/analytics/summary', [AnalyticsController::class, 'getAnalyticsSummary']);
+});
+
+// Admin routes - requires admin authentication
+Route::middleware(['auth:sanctum'])->group(function () {
+    // Settings management
+    Route::get('/admin/settings', [AdminController::class, 'getAllSettings']);
+    Route::put('/admin/settings/website', [AdminController::class, 'updateWebsiteSettings']);
+    Route::put('/admin/settings/ffmpeg', [AdminController::class, 'updateFFmpegSettings']);
+    Route::put('/admin/settings/s3', [AdminController::class, 'updateS3Settings']);
+    Route::put('/admin/settings/redis', [AdminController::class, 'updateRedisSettings']);
+    Route::put('/admin/settings/ratelimit', [AdminController::class, 'updateRateLimitSettings']);
+    Route::put('/admin/settings/cors', [AdminController::class, 'updateCorsSettings']);
+    Route::put('/admin/settings/analytics', [AdminController::class, 'updateAnalyticsSettings']);
+    Route::put('/admin/settings/security', [AdminController::class, 'updateSecuritySettings']);
+    Route::put('/admin/settings/email', [AdminController::class, 'updateEmailSettings']);
+    Route::get('/admin/settings/googledrive', [AdminController::class, 'getGoogleDriveSettings']);
+    Route::put('/admin/settings/googledrive', [AdminController::class, 'updateGoogleDriveSettings']);
+
+    // Favicon management
+    Route::post('/admin/settings/favicon', [AdminController::class, 'uploadFavicon']);
+    Route::delete('/admin/settings/favicon', [AdminController::class, 'deleteFavicon']);
+
+    // User management
+    Route::get('/admin/users', [AdminController::class, 'getUsers']);
+    Route::get('/admin/users/{id}', [AdminController::class, 'getUser']);
+    Route::put('/admin/users/{id}', [AdminController::class, 'updateUser']);
+    Route::put('/admin/users/{id}/ban', [AdminController::class, 'toggleUserBan']);
+    Route::put('/admin/users/{id}/storage', [AdminController::class, 'updateUserStorage']);
+    Route::delete('/admin/users/{id}', [AdminController::class, 'deleteUser']);
+    Route::put('/admin/users/{id}/reset-password', [AdminController::class, 'resetUserPassword']);
+    Route::put('/admin/users/{id}/ads', [AdminController::class, 'toggleUserAds']);
+    Route::get('/admin/videos', [AdminController::class, 'adminGetUserVideos']);
+
+    // Storage management
+    Route::get('/admin/storage', [AdminController::class, 'getStorageStats']);
+});
+
+// Public admin routes
+Route::get('/admin/favicon', [AdminController::class, 'getFavicon']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();

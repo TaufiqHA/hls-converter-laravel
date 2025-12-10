@@ -38,7 +38,21 @@ class User extends Authenticatable
      */
     protected $table = 'users';
 
-    public $timestamps = false;
+    public $timestamps = true;
+
+    /**
+     * The name of the "created at" column.
+     *
+     * @var string|null
+     */
+    const CREATED_AT = 'createdAt';
+
+    /**
+     * The name of the "updated at" column.
+     *
+     * @var string|null
+     */
+    const UPDATED_AT = 'updatedAt';
 
     // Temporarily manage timestamps manually since the DB doesn't have proper defaults
     protected $fillable = [

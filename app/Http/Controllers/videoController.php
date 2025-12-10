@@ -161,6 +161,36 @@ class videoController extends Controller
             return response()->json(['error' => $validator->errors()], 400);
         }
 
+        // Use the new RemoteUploaderService for validation and filename extraction
+        $remoteUploader = new \App\Services\RemoteUploaderService();
+
+        // Validate the URL
+        $validationResult = $remoteUploader->validateUrl($request->url);
+        if (!$validationResult['isValid']) {
+            return response()->json(['error' => "Invalid URL: {$validationResult['message']}"], 400);
+        }
+
+        // Determine upload type and extract filename
+        $uploadType = $validationResult['urlType'] === 'googledrive'
+            ? \App\Enums\UploadType::GOOGLEDRIVE
+            : \App\Enums\UploadType::REMOTE;
+
+        // Get proper filename from URL
+        $originalFileName = $remoteUploader->getFilenameFromUrl($request->url) ?:
+                           basename(parse_url($request->url, PHP_URL_PATH)) ?:
+                           'remote_video.mp4';
+
+        // Create a temporary file path for the download
+        $tempFilePath = null;
+        $tempFileName = pathinfo($originalFileName, PATHINFO_FILENAME) . '_' . Str::random(10) . '.tmp';
+        $tempFilePath = "temp/remote_uploads/{$user->id}/{$tempFileName}";
+
+        // Ensure the temp directory exists
+        $tempDirectory = dirname(storage_path('app/' . $tempFilePath));
+        if (!file_exists($tempDirectory)) {
+            mkdir($tempDirectory, 0755, true);
+        }
+
         $tags = $request->has('tags') ? $request->tags : [];
         // Ensure tags is always an array, even if empty or if it's a string representation of an array
         if (is_string($tags)) {
@@ -181,10 +211,12 @@ class videoController extends Controller
             'userId' => $user->id,
             'title' => $request->title,
             'description' => $request->description,
-            'originalFileName' => basename(parse_url($request->url, PHP_URL_PATH)) ?: 'remote_video',
+            'originalFileName' => $originalFileName,
+            'originalFilePath' => $tempFilePath,  // Add the temporary path
+            'originalFileSize' => 0,  // Set to 0 since we don't know the size yet
             'remoteUrl' => $request->url,
             'status' => 'queued',
-            'uploadType' => str_contains($request->url, 'drive.google.com') ? 'googledrive' : 'remote',
+            'uploadType' => $uploadType,
             'privacy' => $request->privacy ?? 'public',
             'tags' => $tags,
             'storageType' => 'local'
@@ -200,7 +232,8 @@ class videoController extends Controller
                 'id' => $video->id,
                 'title' => $video->title,
                 'status' => $video->status,
-                'remoteUrl' => $video->remoteUrl
+                'remoteUrl' => $video->remoteUrl,
+                'uploadType' => $uploadType->value
             ]
         ]);
     }
@@ -315,7 +348,8 @@ class videoController extends Controller
                     'total' => $videos->total(),
                     'totalPages' => $videos->lastPage()
                 ]
-            ]
+                ],
+                'success' => true
         ]);
     }
 
@@ -501,11 +535,11 @@ class videoController extends Controller
             if (is_string($tags)) {
                 // If it's a string representation of an array, try to decode it
                 if ($tags === '[]' || $tags === '') {
-                    $tags = `{}`; // PostgreSQL empty array format
+                    $tags = []; // Empty array
                 } else {
                     // Attempt to decode JSON string if it looks like one
                     $decoded = json_decode($tags, true);
-                    $tags = is_array($decoded) ? $decoded : `{}`;
+                    $tags = is_array($decoded) ? $decoded : [];
                 }
             } else {
                 $tags = is_array($tags) ? (count($tags) === 0 ? `{}` : $tags) : `{}`;
@@ -689,8 +723,10 @@ class videoController extends Controller
             return response()->json(['error' => 'Video not found'], 404);
         }
 
-        // Update user's storage - subtract the video file size
-        $user->decrement('storageUsed', $video->originalFileSize);
+        // Update user's storage - subtract the video file size only if the file exists
+        if ($video->originalFileSize > 0) {
+            $user->decrement('storageUsed', $video->originalFileSize);
+        }
 
         // Delete files based on storage type
         if ($video->storageType === 'local') {
@@ -704,10 +740,14 @@ class videoController extends Controller
                 Storage::disk('local')->delete($video->thumbnailPath);
             }
         }
-        // For S3 storage, you would delete from S3 here
-        // else if ($video->storageType === 's3' && $video->s3Key) {
-        //     Storage::disk('s3')->delete($video->s3Key);
-        // }
+        // For S3 storage, delete from S3
+        else if ($video->storageType === 's3' && $video->id) {
+            // Create S3StorageService instance to handle deletion
+            $s3Service = new \App\Services\S3StorageService(true); // Initialize from database config
+            if ($s3Service->fileExists("users/{$video->userId}/videos/{$video->id}/playlist.m3u8")) {
+                $s3Service->deleteHLSFiles($video->id);
+            }
+        }
 
         $video->delete();
 
@@ -793,6 +833,138 @@ class videoController extends Controller
         // }
 
         return response()->json(['error' => 'File not found'], 404);
+    }
+
+    /**
+     * Handles guest remote URL uploads with validation and Google Drive support (if enabled), adds to queue for background processing.
+     *
+     * POST `/api/public/remote-upload`
+     *
+     * Request:
+     * {
+     *   "url": "https://example.com/video.mp4",
+     *   "title": "Remote Video",
+     *   "description": "A video from remote URL",
+     *   "password": "guest_access_password"  // Only required if guest uploads enabled
+     * }
+     *
+     * Response (Success - 200):
+     * {
+     *   "message": "Guest remote video upload started",
+     *   "video": {
+     *     "id": "video-uuid",
+     *     "title": "Remote Video",
+     *     "status": "queued",
+     *     "remoteUrl": "https://example.com/video.mp4"
+     *   }
+     * }
+     */
+    public function guestRemoteUpload(Request $request)
+    {
+        // Check if guest uploads are enabled
+        $guestUploadsEnabled = config('app.guest_remote_uploads_enabled', false);
+        if (!$guestUploadsEnabled) {
+            return response()->json(['error' => 'Guest remote uploads are not enabled'], 403);
+        }
+
+        // Check password if required
+        $guestUploadPassword = config('app.guest_remote_upload_password');
+        if ($guestUploadPassword && $request->input('password') !== $guestUploadPassword) {
+            return response()->json(['error' => 'Invalid password'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'url' => 'required|url',
+            'title' => 'required|string|max:200',
+            'description' => 'sometimes|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()], 400);
+        }
+
+        // Use the new RemoteUploaderService for validation and filename extraction
+        $remoteUploader = new \App\Services\RemoteUploaderService();
+
+        // Validate the URL
+        $validationResult = $remoteUploader->validateUrl($request->url);
+        if (!$validationResult['isValid']) {
+            return response()->json(['error' => "Invalid URL: {$validationResult['message']}"], 400);
+        }
+
+        // Determine upload type and extract filename
+        $uploadType = $validationResult['urlType'] === 'googledrive'
+            ? \App\Enums\UploadType::GOOGLEDRIVE
+            : \App\Enums\UploadType::REMOTE;
+
+        // Get proper filename from URL
+        $originalFileName = $remoteUploader->getFilenameFromUrl($request->url) ?:
+                           basename(parse_url($request->url, PHP_URL_PATH)) ?:
+                           'remote_video.mp4';
+
+        // For guest uploads, we'll assign a special user ID (e.g., guest user)
+        // For now, we'll use a placeholder - in a real implementation, you might have a guest user
+        $guestUserId = config('app.guest_user_id', 'guest');
+
+        // Create a temporary file path for the download
+        $tempFilePath = null;
+        $tempFileName = pathinfo($originalFileName, PATHINFO_FILENAME) . '_' . Str::random(10) . '.tmp';
+        $tempFilePath = "temp/remote_uploads/guest/{$tempFileName}";
+
+        // Ensure the temp directory exists
+        $tempDirectory = dirname(storage_path('app/' . $tempFilePath));
+        if (!file_exists($tempDirectory)) {
+            mkdir($tempDirectory, 0755, true);
+        }
+
+        $tags = $request->has('tags') ? $request->tags : [];
+        // Ensure tags is always an array, even if empty or if it's a string representation of an array
+        if (is_string($tags)) {
+            // If it's a string representation of an array, try to decode it
+            if ($tags === '[]' || $tags === '') {
+                $tags = `{}`; // PostgreSQL empty array format
+            } else {
+                // Attempt to decode JSON string if it looks like one
+                $decoded = json_decode($tags, true);
+                $tags = is_array($decoded) ? $decoded : `{}`;
+            }
+        } else {
+            $tags = is_array($tags) ? (count($tags) === 0 ? `{}` : $tags) : `{}`;
+        }
+
+        // For guest uploads, we'll use a special privacy level or default to public
+        $privacy = 'public'; // Guest uploads are typically public
+
+        $video = Video::create([
+            'id' => Str::uuid(),
+            'userId' => $guestUserId, // Guest user ID
+            'title' => $request->title,
+            'description' => $request->description,
+            'originalFileName' => $originalFileName,
+            'originalFilePath' => $tempFilePath,  // Add the temporary path
+            'originalFileSize' => 0,  // Set to 0 since we don't know the size yet
+            'remoteUrl' => $request->url,
+            'status' => 'queued',
+            'uploadType' => $uploadType,
+            'privacy' => $privacy,
+            'tags' => $tags,
+            'storageType' => 'local'
+        ]);
+
+        // Update video status and add to processing queue
+        $statusService = new \App\Services\VideoStatusService();
+        $statusService->handleSuccessfulUpload($video->id);
+
+        return response()->json([
+            'message' => 'Guest remote video upload started',
+            'video' => [
+                'id' => $video->id,
+                'title' => $video->title,
+                'status' => $video->status,
+                'remoteUrl' => $video->remoteUrl,
+                'uploadType' => $uploadType->value
+            ]
+        ]);
     }
 
     /**

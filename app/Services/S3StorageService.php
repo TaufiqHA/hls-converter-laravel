@@ -26,36 +26,83 @@ class S3StorageService
     protected $region;
     protected $enabled;
 
-    public function __construct()
+    public function __construct($useDatabaseConfig = false)
     {
-        $this->enabled = config('filesystems.disks.s3.enabled', false);
-        
-        if ($this->enabled) {
-            $this->client = new S3Client([
-                'version' => 'latest',
-                'region' => config('filesystems.disks.s3.region', 'us-east-1'),
-                'endpoint' => config('filesystems.disks.s3.endpoint'),
-                'use_path_style_endpoint' => config('filesystems.disks.s3.use_path_style_endpoint', false),
-                'credentials' => [
-                    'key' => config('filesystems.disks.s3.key'),
-                    'secret' => config('filesystems.disks.s3.secret'),
-                ],
-            ]);
-            
-            $this->bucket = config('filesystems.disks.s3.bucket');
-            $this->region = config('filesystems.disks.s3.region', 'us-east-1');
+        if ($useDatabaseConfig) {
+            // Initialize from database
+            $this->initFromDatabase();
+        } else {
+            // Initialize from config
+            $this->enabled = config('filesystems.disks.s3.enabled', false);
+
+            if ($this->enabled) {
+                $this->client = new S3Client([
+                    'version' => 'latest',
+                    'region' => config('filesystems.disks.s3.region', 'us-east-1'),
+                    'endpoint' => config('filesystems.disks.s3.endpoint'),
+                    'use_path_style_endpoint' => config('filesystems.disks.s3.use_path_style_endpoint', false),
+                    'credentials' => [
+                        'key' => config('filesystems.disks.s3.key'),
+                        'secret' => config('filesystems.disks.s3.secret'),
+                    ],
+                ]);
+
+                $this->bucket = config('filesystems.disks.s3.bucket');
+                $this->region = config('filesystems.disks.s3.region', 'us-east-1');
+            }
         }
     }
 
     /**
      * Initializes S3 client from database settings
-     * 
+     *
      * @return void
      */
     public function initFromDatabase(): void
     {
-        // This would normally fetch S3 settings from the database and reinitialize the client
-        // For now, we're using Laravel's config system which can be populated from database
+        try {
+            // Try to get admin user settings - look for first user with admin role
+            $adminUser = \App\Models\User::where('role', 'admin')->first();
+
+            if (!$adminUser) {
+                // If no admin user found, try first user
+                $adminUser = \App\Models\User::first();
+            }
+
+            if ($adminUser) {
+                $settings = \App\Models\Setting::where('userId', $adminUser->id)->first();
+
+                if ($settings && isset($settings->s3Settings)) {
+                    $s3Settings = $settings->s3Settings;
+
+                    // Only update if S3 settings exist in database
+                    if (is_array($s3Settings)) {
+                        // Update enabled status
+                        $this->enabled = (isset($s3Settings['enabled']) && $s3Settings['enabled']) &&
+                                        !empty($s3Settings['accessKey']);
+
+                        // If S3 is enabled, initialize the client with database settings
+                        if ($this->enabled) {
+                            $this->client = new S3Client([
+                                'version' => 'latest',
+                                'region' => $s3Settings['region'] ?? 'us-east-1',
+                                'endpoint' => $s3Settings['endpoint'] ?? null,
+                                'use_path_style_endpoint' => $s3Settings['forcePathStyle'] ?? false,
+                                'credentials' => [
+                                    'key' => $s3Settings['accessKey'] ?? null,
+                                    'secret' => $s3Settings['secretKey'] ?? null,
+                                ],
+                            ]);
+
+                            $this->bucket = $s3Settings['bucket'] ?? null;
+                            $this->region = $s3Settings['region'] ?? 'us-east-1';
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error initializing S3 client from database: ' . $e->getMessage());
+        }
     }
 
     /**

@@ -941,7 +941,7 @@ class settingsController extends Controller
     {
         $user = $request->user();
 
-        if ($user->role !== 'admin') {
+        if ($user->role == 'user') {
             return response()->json(['error' => 'Admin access required'], 403);
         }
 
@@ -952,6 +952,12 @@ class settingsController extends Controller
             'secretAccessKey' => 'sometimes|string',
             'bucket' => 'sometimes|string',
             'region' => 'sometimes|string',
+            'storageType' => 'sometimes|string',
+            'forcePathStyle' => 'sometimes|boolean',
+            'deleteLocalAfterUpload' => 'sometimes|boolean',
+            'publicUrlBase' => 'sometimes|string',
+            'r2AccountId' => 'sometimes|string',
+            'r2PublicDomain' => 'sometimes|string',
         ]);
 
         // Validasi storage type
@@ -968,26 +974,43 @@ class settingsController extends Controller
             return response()->json(['error' => $validator->errors()], 400);
         }
 
-        // In a real implementation, you would save to a dedicated admin settings table
-        // For now, just return success response
+        // Get or create admin settings
+        $settings = Setting::where('userId', $user->id)->first();
+        if (!$settings) {
+            $settings = new Setting([
+                'id' => Str::uuid(),
+                'userId' => $user->id,
+            ]);
+            $settings->save();
+        }
+
+        $s3Settings = array_merge($settings->s3Settings ?: [
+            'enabled' => false,
+            'storageType' => 'local',
+            'endpoint' => '',
+            'accessKey' => '',
+            'secretKey' => '',
+            'bucket' => '',
+            'region' => 'us-east-1',
+            'forcePathStyle' => false,
+            'deleteLocalAfterUpload' => false,
+            'publicUrlBase' => '',
+            'r2AccountId' => '',
+            'r2PublicDomain' => ''
+        ], $request->only([
+            'enabled', 'storageType', 'endpoint', 'accessKey', 'secretKey',
+            'bucket', 'region', 'forcePathStyle', 'deleteLocalAfterUpload',
+            'publicUrlBase', 'r2AccountId', 'r2PublicDomain'
+        ]));
+
+        // Update the database
+        $settings->update(['s3Settings' => $s3Settings]);
+
         return response()->json([
             'success' => true,
             'message' => 'S3 settings updated successfully',
             'data' => [
-                's3Settings' => [
-                    'enabled' => $request->enabled ?? false,
-                    'storageType' => $storageType,
-                    'endpoint' => $request->endpoint ?? '',
-                    'accessKey' => $request->accessKey ?? '',
-                    'secretKey' => $request->secretKey ?? '',
-                    'bucket' => $request->bucket ?? '',
-                    'region' => $request->region ?? 'us-east-1',
-                    'forcePathStyle' => $request->forcePathStyle ?? false,
-                    'deleteLocalAfterUpload' => $request->deleteLocalAfterUpload ?? false,
-                    'publicUrlBase' => $request->publicUrlBase ?? '',
-                    'r2AccountId' => $request->r2AccountId ?? '',
-                    'r2PublicDomain' => $request->r2PublicDomain ?? ''
-                ]
+                's3Settings' => $s3Settings
             ]
         ]);
     }

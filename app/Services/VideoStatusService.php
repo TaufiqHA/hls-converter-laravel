@@ -32,6 +32,9 @@ class VideoStatusService
                 return false;
             }
 
+            // For direct uploads, download is already complete (100%), but for remote uploads it's 0%
+            $downloadProgress = ($video->uploadType === \App\Enums\UploadType::DIRECT) ? 100 : 0;
+
             // Update the video status to 'queued'
             $video->update([
                 'status' => \App\Enums\VideoStatus::QUEUED,
@@ -39,7 +42,7 @@ class VideoStatusService
                 'processingStartedAt' => null,
                 'processingCompletedAt' => null,
                 'processingProgress' => 0,
-                'downloadProgress' => 100, // Upload is complete so download is 100%
+                'downloadProgress' => $downloadProgress,
                 'convertProgress' => 0,
                 'updatedAt' => now()
             ]);
