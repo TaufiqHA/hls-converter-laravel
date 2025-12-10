@@ -163,13 +163,13 @@ class HLSConverterService
             $s3Success = $s3Service->uploadHLSFiles($outputDir, $userId, $videoId);
 
             if ($s3Success) {
-                // Generate S3 public URL for the playlist
-                $s3PublicUrl = $s3Service->getPublicUrl("users/{$userId}/videos/{$videoId}/playlist.m3u8");
+                // Generate S3 public URL for the playlist based on the correct structure
+                $s3PublicUrl = $s3Service->getPublicUrl("hls/{$userId}/{$videoId}/playlist.m3u8");
 
                 // Update quality variants with S3 URLs instead of local ones
                 foreach ($qualityVariants as &$variant) {
                     $fileName = basename($variant['url']);
-                    $variant['url'] = $s3Service->getPublicUrl("users/{$userId}/videos/{$videoId}/{$fileName}");
+                    $variant['url'] = $s3Service->getPublicUrl("hls/{$userId}/{$videoId}/{$fileName}");
                 }
             } else {
                 Log::warning("S3 upload failed for video ID: {$videoId}, falling back to local storage");

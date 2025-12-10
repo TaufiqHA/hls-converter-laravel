@@ -159,7 +159,9 @@ class S3StorageService
 
             foreach ($files as $file) {
                 $fileContent = Storage::disk('local')->get($file);
-                $s3Key = "users/{$userId}/videos/{$videoId}/" . basename($file);
+                // Use the path structure as per documentation: hls/{userId}/{videoId}/
+                $relativePath = str_replace($localHlsDir . '/', '', $file);
+                $s3Key = "hls/{$userId}/{$videoId}/{$relativePath}";
 
                 $this->client->putObject([
                     'Bucket' => $this->bucket,
@@ -265,11 +267,12 @@ class S3StorageService
 
     /**
      * Delete HLS files from S3
-     * 
+     *
      * @param string $videoId Video ID
+     * @param string|null $userId User ID (optional, for more specific path)
      * @return bool Success status
      */
-    public function deleteHLSFiles(string $videoId): bool
+    public function deleteHLSFiles(string $videoId, ?string $userId = null): bool
     {
         if (!$this->enabled) {
             Log::warning('S3 is not enabled');
@@ -277,9 +280,8 @@ class S3StorageService
         }
 
         try {
-            // For simplicity, we'll assume HLS files are stored under a specific path
-            // In practice, you might want to list objects with a prefix and delete them
-            $prefix = "videos/{$videoId}/";
+            // Use the path structure as per documentation: hls/{userId}/{videoId}/
+            $prefix = $userId ? "hls/{$userId}/{$videoId}/" : "hls/*/{$videoId}/";
 
             $objects = $this->client->listObjects([
                 'Bucket' => $this->bucket,

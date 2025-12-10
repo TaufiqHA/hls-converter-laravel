@@ -86,6 +86,19 @@ class videoController extends Controller
             $tags = is_array($tags) ? (count($tags) === 0 ? `{}` : $tags) : `{}`;
         }
 
+        // Check if S3 storage is enabled for this user by checking admin settings
+        $storageType = 'local';
+        $adminUser = \App\Models\User::where('role', 'admin')->first() ?? \App\Models\User::first();
+        if ($adminUser) {
+            $settings = \App\Models\Setting::where('userId', $adminUser->id)->first();
+            if ($settings && isset($settings->s3Settings) && is_array($settings->s3Settings)) {
+                $s3Settings = $settings->s3Settings;
+                if (isset($s3Settings['enabled']) && $s3Settings['enabled'] && !empty($s3Settings['accessKey'])) {
+                    $storageType = 's3';
+                }
+            }
+        }
+
         $video = Video::create([
             'id' => Str::uuid(),
             'userId' => $user->id,
@@ -98,7 +111,7 @@ class videoController extends Controller
             'uploadType' => 'direct',
             'privacy' => $request->privacy ?? 'public',
             'tags' => $tags,
-            'storageType' => 'local'
+            'storageType' => $storageType
         ]);
 
         // Update user's storage used

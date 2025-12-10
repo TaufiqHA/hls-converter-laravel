@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property array $websiteSettings
  * @property array $ffmpegSettings
  * @property array $s3Settings
+ * @property array $r2Settings
  * @property array $redisSettings
  * @property array $rateLimitSettings
  * @property array $corsSettings
@@ -85,6 +86,7 @@ class Setting extends Model
         'websiteSettings',
         'ffmpegSettings',
         's3Settings',
+        'r2Settings',
         'redisSettings',
         'rateLimitSettings',
         'corsSettings',
@@ -110,6 +112,7 @@ class Setting extends Model
         'websiteSettings' => 'array', // JSONB
         'ffmpegSettings' => 'array', // JSONB
         's3Settings' => 'array', // JSONB
+        'r2Settings' => 'array', // JSONB
         'redisSettings' => 'array', // JSONB
         'rateLimitSettings' => 'array', // JSONB
         'corsSettings' => 'array', // JSONB

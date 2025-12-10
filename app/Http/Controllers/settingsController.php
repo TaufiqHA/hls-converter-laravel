@@ -947,17 +947,17 @@ class settingsController extends Controller
 
         $validator = Validator::make($request->all(), [
             'enabled' => 'sometimes|boolean',
-            'endpoint' => 'sometimes|string',
-            'accessKeyId' => 'sometimes|string',
-            'secretAccessKey' => 'sometimes|string',
-            'bucket' => 'sometimes|string',
-            'region' => 'sometimes|string',
-            'storageType' => 'sometimes|string',
+            'endpoint' => 'sometimes|string|nullable',
+            'accessKeyId' => 'sometimes|string|nullable',
+            'secretAccessKey' => 'sometimes|string|nullable',
+            'bucket' => 'sometimes|string|nullable',
+            'region' => 'sometimes|string|nullable',
+            'storageType' => 'sometimes|string|nullable',
             'forcePathStyle' => 'sometimes|boolean',
             'deleteLocalAfterUpload' => 'sometimes|boolean',
-            'publicUrlBase' => 'sometimes|string',
-            'r2AccountId' => 'sometimes|string',
-            'r2PublicDomain' => 'sometimes|string',
+            'publicUrlBase' => 'sometimes|string|nullable',
+            'r2AccountId' => 'sometimes|string|nullable',
+            'r2PublicDomain' => 'sometimes|string|nullable',
         ]);
 
         // Validasi storage type

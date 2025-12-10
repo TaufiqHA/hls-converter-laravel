@@ -103,6 +103,25 @@ class ProcessVideoJob implements ShouldQueue
             throw new \Exception("Input video file does not exist: {$video->originalFilePath}");
         }
 
+        // If S3 is enabled for this video and the file is currently stored locally,
+        // we should also upload the original file to S3
+        if ($video->storageType === 's3') {
+            try {
+                $s3Service = new \App\Services\S3StorageService(true); // Initialize from database config
+                $originalS3Key = "users/{$video->userId}/originals/{$video->id}." . pathinfo($video->originalFilePath, PATHINFO_EXTENSION);
+
+                $s3UploadSuccess = $s3Service->uploadFile($video->originalFilePath, $originalS3Key, 'video/' . pathinfo($video->originalFilePath, PATHINFO_EXTENSION));
+
+                if ($s3UploadSuccess) {
+                    Log::info("Original video file uploaded to S3: {$originalS3Key}");
+                } else {
+                    Log::warning("Failed to upload original video file to S3: {$originalS3Key}");
+                }
+            } catch (\Exception $e) {
+                Log::error("Error uploading original file to S3: " . $e->getMessage());
+            }
+        }
+
         // Update the video record with initial processing info
         $video->update([
             'processingPhase' => \App\Enums\VideoProcessingPhase::CONVERTING,
@@ -145,6 +164,28 @@ class ProcessVideoJob implements ShouldQueue
             'storageType' => $result['storageType'] ?? 'local',
             's3PublicUrl' => $result['s3PublicUrl'] ?? null
         ]);
+
+        // If S3 is enabled and deleteLocalAfterUpload is set, delete the original file from local storage
+        if ($video->storageType === 's3') {
+            try {
+                // Get admin settings to check if deleteLocalAfterUpload is enabled
+                $adminUser = \App\Models\User::where('role', 'admin')->first() ?? \App\Models\User::first();
+                if ($adminUser) {
+                    $settings = \App\Models\Setting::where('userId', $adminUser->id)->first();
+                    if ($settings && isset($settings->s3Settings) && is_array($settings->s3Settings)) {
+                        $s3Settings = $settings->s3Settings;
+                        if (isset($s3Settings['deleteLocalAfterUpload']) && $s3Settings['deleteLocalAfterUpload']) {
+                            if (Storage::exists($video->originalFilePath)) {
+                                Storage::delete($video->originalFilePath);
+                                Log::info("Original video file deleted from local storage: {$video->originalFilePath}");
+                            }
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error("Error deleting original file from local storage: " . $e->getMessage());
+            }
+        }
     }
 
     /**
