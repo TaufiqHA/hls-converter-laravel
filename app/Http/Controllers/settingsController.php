@@ -238,8 +238,24 @@ class settingsController extends Controller
             'defaultQuality' => 'sometimes|string|in:auto,1080p,720p,480p,360p',
             'seekInterval' => 'sometimes|integer|min:1|max:60',
             'skin' => 'sometimes|string',
-            'color1' => 'sometimes|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/',
-            'color2' => 'sometimes|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/',
+            'color1' => [
+                'sometimes',
+                'string',
+                function ($attribute, $value, $fail) {
+                    if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/', $value)) {
+                        $fail('The '.$attribute.' must be a valid hex color.');
+                    }
+                },
+            ],
+            'color2' => [
+                'sometimes',
+                'string',
+                function ($attribute, $value, $fail) {
+                    if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/', $value)) {
+                        $fail('The '.$attribute.' must be a valid hex color.');
+                    }
+                },
+            ],
         ]);
 
         if ($validator->fails()) {
@@ -606,13 +622,37 @@ class settingsController extends Controller
 
         $validator = Validator::make($request->all(), [
             'defaultLanguage' => 'sometimes|string',
-            'fontColor' => 'sometimes|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/',
+            'fontColor' => [
+                'sometimes',
+                'string',
+                function ($attribute, $value, $fail) {
+                    if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/', $value)) {
+                        $fail('The '.$attribute.' must be a valid hex color.');
+                    }
+                },
+            ],
             'fontFamily' => 'sometimes|string',
             'edgeStyle' => 'sometimes|string|in:none,raised,depressed,uniform,dropshadow',
             'backgroundOpacity' => 'sometimes|numeric|min:0|max:1',
-            'backgroundColor' => 'sometimes|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/',
+            'backgroundColor' => [
+                'sometimes',
+                'string',
+                function ($attribute, $value, $fail) {
+                    if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/', $value)) {
+                        $fail('The '.$attribute.' must be a valid hex color.');
+                    }
+                },
+            ],
             'windowOpacity' => 'sometimes|numeric|min:0|max:1',
-            'windowColor' => 'sometimes|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/',
+            'windowColor' => [
+                'sometimes',
+                'string',
+                function ($attribute, $value, $fail) {
+                    if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/', $value)) {
+                        $fail('The '.$attribute.' must be a valid hex color.');
+                    }
+                },
+            ],
         ]);
 
         if ($validator->fails()) {
