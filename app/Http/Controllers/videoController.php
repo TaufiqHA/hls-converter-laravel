@@ -86,18 +86,7 @@ class videoController extends Controller
             $tags = is_array($tags) ? (count($tags) === 0 ? `{}` : $tags) : `{}`;
         }
 
-        // Check if S3 storage is enabled for this user by checking admin settings
         $storageType = 'local';
-        $adminUser = \App\Models\User::where('role', 'admin')->first() ?? \App\Models\User::first();
-        if ($adminUser) {
-            $settings = \App\Models\Setting::where('userId', $adminUser->id)->first();
-            if ($settings && isset($settings->s3Settings) && is_array($settings->s3Settings)) {
-                $s3Settings = $settings->s3Settings;
-                if (isset($s3Settings['enabled']) && $s3Settings['enabled'] && !empty($s3Settings['accessKey'])) {
-                    $storageType = 's3';
-                }
-            }
-        }
 
         $video = Video::create([
             'id' => Str::uuid(),
@@ -323,14 +312,12 @@ class videoController extends Controller
         return response()->json([
             'data' => [
                 'videos' => $videos->getCollection()->map(function ($video) use ($appUrl, $request) {
-                    // Generate proper URLs based on storage type for each video
+                    // Generate proper URLs for local storage
                     $hlsPlaylistUrl = $video->hlsPlaylistUrl;
-                    if ($video->storageType === 's3' && $video->s3PublicUrl) {
-                        $hlsPlaylistUrl = $video->s3PublicUrl;
-                    } elseif ($video->storageType === 'local' && $video->hlsPlaylistUrl && !str_contains($video->hlsPlaylistUrl, '/api/stream/')) {
+                    if ($video->hlsPlaylistUrl && !str_contains($video->hlsPlaylistUrl, '/api/stream/')) {
                         // For local storage, if the hlsPlaylistUrl is a file path, convert it to streaming endpoint
                         $hlsPlaylistUrl = url("/api/stream/{$request->user()->id}/{$video->id}/playlist.m3u8");
-                    } elseif ($video->storageType === 'local' && empty($video->hlsPlaylistUrl) && $video->status === 'completed') {
+                    } elseif (empty($video->hlsPlaylistUrl) && $video->status === 'completed') {
                         // If no hlsPlaylistUrl is set but video is completed, generate the streaming URL
                         $hlsPlaylistUrl = url("/api/stream/{$request->user()->id}/{$video->id}/playlist.m3u8");
                     }
@@ -435,14 +422,12 @@ class videoController extends Controller
             return response()->json(['error' => 'Video not found'], 404);
         }
 
-        // Generate proper URLs based on storage type
+        // Generate proper URLs for local storage
         $hlsPlaylistUrl = $video->hlsPlaylistUrl;
-        if ($video->storageType === 's3' && $video->s3PublicUrl) {
-            $hlsPlaylistUrl = $video->s3PublicUrl;
-        } elseif ($video->storageType === 'local' && $video->hlsPlaylistUrl && !str_contains($video->hlsPlaylistUrl, '/api/stream/')) {
+        if ($video->hlsPlaylistUrl && !str_contains($video->hlsPlaylistUrl, '/api/stream/')) {
             // For local storage, if the hlsPlaylistUrl is a file path, convert it to streaming endpoint
             $hlsPlaylistUrl = url("/api/stream/{$user->id}/{$video->id}/playlist.m3u8");
-        } elseif ($video->storageType === 'local' && empty($video->hlsPlaylistUrl) && $video->status === 'completed') {
+        } elseif (empty($video->hlsPlaylistUrl) && $video->status === 'completed') {
             // If no hlsPlaylistUrl is set but video is completed, generate the streaming URL
             $hlsPlaylistUrl = url("/api/stream/{$user->id}/{$video->id}/playlist.m3u8");
         }

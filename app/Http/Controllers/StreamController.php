@@ -21,7 +21,6 @@ class StreamController extends Controller
      * - CORS support for cross-domain streaming
      * - Content type handling based on file extension
      * - URL rewriting for M3U8 files to use proxy URLs
-     * - S3 integration (placeholder - would require S3-specific implementation)
      * - Security checks based on video privacy settings
      */
     public function streamFile(Request $request, $userId, $videoId, $file)
@@ -56,76 +55,40 @@ class StreamController extends Controller
             }
         }
 
-        // Determine the full path based on storage type
-        if ($video->storageType === 's3') {
-            // For S3 storage, get the S3 service and proxy the content
-            $s3Service = new \App\Services\S3StorageService(true); // Initialize from database config
+        // For local storage
+        $fullPath = $this->getLocalFilePath($video, $file);
 
-            // Construct the S3 key based on the file requested
-            $s3Key = "hls/{$video->userId}/{$videoId}/{$file}";
-
-            // Check if the file exists in S3
-            if ($s3Service->fileExists($s3Key)) {
-                $contentType = $this->getContentType($file);
-
-                // Get the content from S3
-                $result = $s3Service->client->getObject([
-                    'Bucket' => $s3Service->bucket,
-                    'Key' => $s3Key,
-                ]);
-
-                $content = $result['Body']->getContents();
-
-                // If it's an M3U8 file, potentially rewrite URLs to use proxy
-                if (pathinfo($file, PATHINFO_EXTENSION) === 'm3u8') {
-                    $content = $this->rewriteM3U8Urls($content, $userId, $videoId);
-                }
-
-                return Response::make($content, 200)
-                    ->header('Content-Type', $contentType)
-                    ->header('Access-Control-Allow-Origin', '*')
-                    ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-                    ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-                    ->header('Cache-Control', 'public, max-age=300');
-            } else {
-                return response()->json(['error' => 'File not found in S3'], 404);
-            }
-        } else {
-            // For local storage
-            $fullPath = $this->getLocalFilePath($video, $file);
-
-            // If the exact path doesn't exist, try to find the file in common HLS locations
-            if (!Storage::disk('public')->exists($fullPath)) {
-                $fullPath = $this->findHlsFile($video, $file);
-            }
-
-            if (empty($fullPath) || !Storage::disk('public')->exists($fullPath)) {
-                Log::info("HLS file not found: {$fullPath}");
-                Log::info("Video hlsPath: {$video->hlsPath}");
-                return response()->json(['error' => 'File not found'], 404);
-            }
-
-            // Determine content type based on file extension
-            $contentType = $this->getContentType($file);
-
-            // Read file contents - use public disk as per the exists check
-            $content = Storage::disk('public')->get($fullPath);
-
-            // If it's an M3U8 file, potentially rewrite URLs to use proxy
-            if (pathinfo($file, PATHINFO_EXTENSION) === 'm3u8') {
-                $content = $this->rewriteM3U8Urls($content, $userId, $videoId);
-            }
-
-            // Set CORS headers for streaming
-            $response = Response::make($content, 200)
-                ->header('Content-Type', $contentType)
-                ->header('Access-Control-Allow-Origin', '*')
-                ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-                ->header('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes for better performance
-
-            return $response;
+        // If the exact path doesn't exist, try to find the file in common HLS locations
+        if (!Storage::disk('public')->exists($fullPath)) {
+            $fullPath = $this->findHlsFile($video, $file);
         }
+
+        if (empty($fullPath) || !Storage::disk('public')->exists($fullPath)) {
+            Log::info("HLS file not found: {$fullPath}");
+            Log::info("Video hlsPath: {$video->hlsPath}");
+            return response()->json(['error' => 'File not found'], 404);
+        }
+
+        // Determine content type based on file extension
+        $contentType = $this->getContentType($file);
+
+        // Read file contents - use public disk as per the exists check
+        $content = Storage::disk('public')->get($fullPath);
+
+        // If it's an M3U8 file, potentially rewrite URLs to use proxy
+        if (pathinfo($file, PATHINFO_EXTENSION) === 'm3u8') {
+            $content = $this->rewriteM3U8Urls($content, $userId, $videoId);
+        }
+
+        // Set CORS headers for streaming
+        $response = Response::make($content, 200)
+            ->header('Content-Type', $contentType)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+            ->header('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes for better performance
+
+        return $response;
     }
 
     /**

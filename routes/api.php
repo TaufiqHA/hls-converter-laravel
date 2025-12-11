@@ -7,11 +7,16 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\videoController;
 use App\Http\Controllers\settingsController;
 use App\Http\Controllers\StreamController;
-use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\analyticsController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\publicController;
+use App\Http\Controllers\BackupController;
 
 // Guest routes (no authentication required)
 Route::post('/public/remote-upload', [videoController::class, 'guestRemoteUpload']);
+
+// Public info route
+Route::get('/public/info', [publicController::class, 'getPublicWebsiteInfo']);
 
 // Authentication routes
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -99,13 +104,13 @@ Route::get('/stream/{userId}/{videoId}/{file}', [StreamController::class, 'strea
 
 // Analytics routes (as per analytics.md)
 // Public routes
-Route::post('/analytics/track', [AnalyticsController::class, 'trackEvent']);
-Route::get('/analytics/session', [AnalyticsController::class, 'generateSession']);
+Route::post('/analytics/track', [analyticsController::class, 'trackEvent']);
+Route::get('/analytics/session', [analyticsController::class, 'generateSession']);
 
 // Private routes
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/analytics/video/{videoId}', [AnalyticsController::class, 'getVideoAnalytics']);
-    Route::get('/analytics/summary', [AnalyticsController::class, 'getAnalyticsSummary']);
+    Route::get('/analytics/video/{videoId}', [analyticsController::class, 'getVideoAnalytics']);
+    Route::get('/analytics/summary', [analyticsController::class, 'getAnalyticsSummary']);
 });
 
 // Admin routes - requires admin authentication
@@ -141,7 +146,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Storage management
     Route::get('/admin/storage', [AdminController::class, 'getStorageStats']);
+
+    // Backup management
+    Route::get('/admin/backup', [BackupController::class, 'listBackups']);
+    Route::post('/admin/backup', [BackupController::class, 'createBackup']);
+    Route::post('/admin/backup/restore', [BackupController::class, 'restoreBackup']);
+    Route::post('/admin/backup/upload', [BackupController::class, 'uploadAndRestore']);
+    Route::delete('/admin/backup/{filename}', [BackupController::class, 'deleteBackup']);
 });
+
+// Public routes for backup
+Route::get('/admin/backup/download/{filename}', [BackupController::class, 'downloadBackup']);
 
 // Public admin routes
 Route::get('/admin/favicon', [AdminController::class, 'getFavicon']);

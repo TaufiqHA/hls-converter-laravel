@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Video;
-use App\Services\S3StorageService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -155,39 +154,18 @@ class HLSConverterService
             Log::warning("Thumbnail generation failed for video ID: {$videoId}");
         }
 
-        // Handle S3 upload if S3 storage is enabled (takes ~5% of remaining progress)
-        $s3Service = new S3StorageService(true); // Initialize from database config
-        $s3PublicUrl = null;
-
-        if ($userId && $videoId) {
-            $s3Success = $s3Service->uploadHLSFiles($outputDir, $userId, $videoId);
-
-            if ($s3Success) {
-                // Generate S3 public URL for the playlist based on the correct structure
-                $s3PublicUrl = $s3Service->getPublicUrl("hls/{$userId}/{$videoId}/playlist.m3u8");
-
-                // Update quality variants with S3 URLs instead of local ones
-                foreach ($qualityVariants as &$variant) {
-                    $fileName = basename($variant['url']);
-                    $variant['url'] = $s3Service->getPublicUrl("hls/{$userId}/{$videoId}/{$fileName}");
-                }
-            } else {
-                Log::warning("S3 upload failed for video ID: {$videoId}, falling back to local storage");
-            }
-        }
-
         if ($statusService && $videoId) {
             $statusService->updateProgress($videoId, 100, \App\Enums\VideoProcessingPhase::CONVERTING);
         }
 
         return [
             'success' => true,
-            'masterPlaylist' => $s3PublicUrl ?: $masterPlaylistPath,
+            'masterPlaylist' => $masterPlaylistPath,
             'qualityVariants' => $qualityVariants,
             'thumbnail' => $thumbnailPath,
             'hlsDirectory' => $outputDir,
-            'storageType' => $s3PublicUrl ? 's3' : 'local',
-            's3PublicUrl' => $s3PublicUrl
+            'storageType' => 'local',
+            's3PublicUrl' => null
         ];
     }
 
